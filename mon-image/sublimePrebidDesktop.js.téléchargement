@@ -1,0 +1,5 @@
+var sublimeNode = document.createElement("script");
+sublimeNode.type = "text/javascript";
+sublimeNode.src = '//sac.ayads.co/sublime/31091/prebid';
+sublimeNode.async = true;
+(document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0] || document.getElementsByTagName('script')[0].parentNode).insertBefore(sublimeNode, null);

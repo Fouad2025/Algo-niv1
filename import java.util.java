@@ -1,24 +1,23 @@
 import java.util.Scanner;
 
-/***--------Donner un nom à votre class -------------------****/
-
-public class Lesson {
-
+public class ReductionCalculator {
     public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
 
-        /***--------  Début du code  -------------------****/
+        // Demander le prix
+        System.out.println("Votre prix ?");
+        double prix = scanner.nextDouble();
 
-        int a;
+        // Demander la réduction en pourcentage
+        System.out.println("Votre réduction (en pourcentage %) ?");
+        double reductionPourcentage = scanner.nextDouble();
 
-        Scanner sc = new Scanner(System.in);
+        // Calculer le prix après réduction
+        double prixApresReduction = prix - (prix * reductionPourcentage / 100);
 
-        System.out.print("Enter a number: ");
-        a = sc.nextInt();
+        // Afficher le résultat
+        System.out.printf("\nPrix après réduction de %.0f%% :\n\n%.2f\n", reductionPourcentage, prixApresReduction);
 
-        System.out.println("You entered: " + a);
-
-        sc.close();
-
-        /***--------  Fin du code  -------------------****/
+        scanner.close();
     }
 }

@@ -1,0 +1,1 @@
+window._nli=window._nli||[],window._nli.push(["brand","BNLI-1448"]),function(){var n,e,i=window._nli||(window._nli=[]);i.loaded||((n=document.createElement("script")).defer=!0,n.src="https://l.lequipe.fr/sdk.js",(e=document.getElementsByTagName("script")[0]).parentNode.insertBefore(n,e),i.loaded=!0)}();

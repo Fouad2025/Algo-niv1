@@ -1,0 +1,132 @@
+(function () {
+    window.lequipeAssets = {
+        "videoWall": {
+            version: "20241127",
+            files: [
+                '/commons/lequipe-paywall/videoWall.js',
+                '/commons/lequipe-paywall/videoWall.css'
+            ]
+        },
+        "pagePaywall": {
+            version: "20241127",
+            files: [
+                '/commons/lequipe-paywall/pagePaywall.js',
+                '/commons/lequipe-paywall/pagePaywall.css'
+            ]
+        },
+        "smarttag": {
+            version: "20240422",
+            files: [
+                '/commons/smarttag.js'
+            ]
+        },
+        "analytics": {
+            version: "20250605",
+            files: [
+                '/commons/analytics.js'
+            ]
+        },
+        "user": {
+            version: "202505231445",
+            files: [
+                '/commons/user.js'
+            ]
+        },
+        "bookmark": {
+            version: "20240715",
+            files: [
+                '/commons/lequipe-bookmark/bookmark.css'
+            ]
+        }
+    };
+
+    var assetsToImport = document.getElementById('importAssets') && document.getElementById('importAssets').dataset.assets;
+    if (assetsToImport) {
+        assetsToImport = assetsToImport.split(',').map(function (asset) { return asset.trim() });
+        var promises = [];
+
+        assetsToImport.forEach(function (assetToImport) {
+            var asset = window.lequipeAssets[assetToImport];
+
+            if (asset) {
+                asset.files.forEach(function (file) {
+                    if (endsWith(file, '.js')) {
+                        promises.push(loadScript(file + '?' + asset.version));
+                    } else if (endsWith(file, '.css')) {
+                        promises.push(loadStyle(file + '?' + asset.version));
+                    }
+                });
+            }
+        });
+
+        Promise.all(promises).then(function () {
+            let assetsImportedEvent = null;
+
+            if (Event.constructor) {
+                assetsImportedEvent = new Event('assetsImported');
+            } else {
+                assetsImportedEvent = document.createEvent('Event');
+                assetsImportedEvent.initEvent('assetsImported', true, true);
+            }
+
+            document.getElementById('importAssets').dispatchEvent(assetsImportedEvent);
+            window.dispatchEvent(new CustomEvent('@lequipe/assets_imported'));
+        });
+    }
+
+    function endsWith(str, suffix) {
+        return str.indexOf(suffix, str.length - suffix.length) !== -1;
+    }
+
+    function loadScript(src) {
+        return new Promise(function (resolve, reject) {
+            var existingEl = document.querySelector('script[src="' + src + '"]');
+            if (existingEl) {
+                if (existingEl.classList.contains('is-loading')) {
+                    existingEl.addEventListener('load', resolve);
+                    existingEl.addEventListener('error', reject);
+                    existingEl.addEventListener('abort', reject);
+                } else {
+                    resolve();
+                }
+                return;
+            }
+
+            var el = document.createElement('script');
+            el.type = 'text/javascript';
+            el.async = true;
+            el.src = src;
+            el.classList.add('is-loading');
+
+            el.addEventListener('load', function (e) {
+                el.classList.remove('is-loading');
+                resolve(e);
+            });
+            el.addEventListener('error', reject);
+            el.addEventListener('abort', reject);
+
+            document.head.appendChild(el);
+
+        });
+    }
+
+    function loadStyle(src) {
+        return new Promise(function (resolve, reject) {
+            if (document.querySelector('link[href="' + src + '"]') || document.querySelector('style[data-href="' + src + '"]')) {
+                resolve();
+                return;
+            }
+
+            var el = document.createElement('link');
+            el.type = 'text/css';
+            el.rel = 'stylesheet';
+            el.href = src;
+
+            el.addEventListener('load', resolve);
+            el.addEventListener('error', reject);
+            el.addEventListener('abort', reject);
+
+            document.head.appendChild(el);
+        });
+    }
+}());

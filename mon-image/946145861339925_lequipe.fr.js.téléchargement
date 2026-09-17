@@ -1,0 +1,13 @@
+/**/ typeof vi.publisherConfig === 'function' && vi.publisherConfig({ 
+  tagConfig: { 
+	    IAB_Category: 'IAB17',
+	    Language: 'fr,en',
+    },
+    viPlayerConfig: {
+        midrolltime: 30, 
+    },  
+    mobile: {
+      tagConfig: {
+      }
+    }
+});

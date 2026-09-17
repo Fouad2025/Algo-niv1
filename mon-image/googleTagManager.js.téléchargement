@@ -1,0 +1,11 @@
+var googleAnalytics = document.createElement('script');
+googleAnalytics.setAttribute('src', 'https://www.googletagmanager.com/gtag/js');
+googleAnalytics.setAttribute('type', 'text/javascript');
+googleAnalytics.setAttribute('async', 'true');
+document.head.appendChild(googleAnalytics);
+
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+
+gtag('js', new Date());
+gtag('config', 'AW-962342007', { allow_enhanced_conversions: true });

@@ -1,0 +1,570 @@
+(function() {
+    // ======================
+    // ======= CONFIG =======
+    // ======================
+    const _window = window.parent !== window ? window.parent : window;
+    let userInfos = null;
+
+    const collectDomain = 'https://cgjhscs.pa-cd.com';
+    const vendorsDidomiAnalytics = 'c:atinterne-cWQKHeJZ';
+    var pianoIds = {
+        pwapi: {
+            android: {
+                mobile: 566231,
+                tablet: 566231
+            },
+            ios: {
+                mobile: 566231,
+                tablet: 566231
+            }
+        },
+        upwa: {
+            mobile: 614743,
+            desktop: 520118
+        }
+    };
+
+    if (_window.location.hostname === 'www.lequipe.fr') {
+        pianoIds = {
+            pwapi: {
+                android: {
+                    mobile: 509043,
+                    tablet: 502193
+                },
+                ios: {
+                    mobile: 496306,
+                    tablet: 496307
+                }
+            },
+            upwa: {
+                mobile: 539121,
+                desktop: 492987
+            }
+        };
+    }
+
+    const cookieDomains = {
+        prod: 'www.lequipe.fr',
+        preprod: 'gcp-preprod-www.lequipe.fr',
+        uat: 'upwa-www.dev-candidate.lequipe.eu',
+        dev: 'upwa-www.lequipe.dev'
+    }
+
+    let noCmpToLoad = null;
+    let isDidomiReady = false;
+    let hasDidomi = false;
+    if (_window.didomiOnReady) {
+        hasDidomi = true;
+        _window.didomiOnReady.push(function () {
+            isDidomiReady = true;
+        });
+    }
+
+    const isDesktop = _window.innerWidth >= 768;
+    const isTablet = navigator.userAgent.match(/iPad/i) || navigator.userAgent.match(/Tablet/i);
+
+    // =================================
+    // ======= GENERIC FUNCTIONS =======
+    // =================================
+
+    function loadScript (src) {
+        return new Promise(function (resolve, reject) {
+            var existingEl = document.querySelector("script[src=\"" + src + "\"]");
+            if (existingEl) {
+                if (existingEl.classList.contains("is-loading")) {
+                    existingEl.addEventListener("load", resolve);
+                    existingEl.addEventListener("error", reject);
+                    existingEl.addEventListener("abort", reject);
+                } else {
+                    resolve();
+                }
+                return;
+            }
+
+            var el = document.createElement("script");
+            el.type = "text/javascript";
+            el.async = true;
+            el.src = src;
+            el.classList.add("is-loading");
+
+            el.addEventListener("load", function (e) {
+                el.classList.remove("is-loading");
+                resolve(e);
+            });
+            el.addEventListener("error", reject);
+            el.addEventListener("abort", reject);
+
+            document.head.appendChild(el);
+
+        });
+    }
+
+    function waitUntil(condition, options) {
+        const maxAttempt = getNestedValue(options, 'maxAttempt') || 30;
+        const checkInterval = getNestedValue(options, 'interval') || 100;
+        let attempt = 0;
+
+        return new Promise((resolve) => {
+            if (condition()) { resolve(true); }
+            const interval = setInterval(() => {
+                attempt = attempt + 1;
+                if (condition()) {
+                    clearInterval(interval);
+                    resolve(true);
+                } else if (attempt > maxAttempt) {
+                    clearInterval(interval);
+                    resolve(false);
+                }
+            }, checkInterval);
+        });
+    }
+
+    function isSubsetOfArray (superset, subset) {
+        if (subset.length === 0 || !superset || superset.length === 0) {
+            return false;
+        }
+        return subset.every(value => superset.includes(value));
+    }
+
+    function getEnv () {
+        var env = undefined;
+
+        if (_window.location.hostname.includes('lequipe.fr')) {
+            if (_window.location.origin === 'https://gcp-preprod-www.lequipe.fr') {
+                env = 'preprod';
+            } else {
+                env = 'prod';
+            }
+        } else if (_window.location.hostname.includes('lequipe.eu')) {
+            env = 'uat';
+        } else {
+            env = 'dev';
+        }
+
+        return env;
+    }
+
+    const env = getEnv();
+    function getCookieDomain () {
+        if (cookieDomains[env]) {
+            return cookieDomains[env]
+        } else {
+            return cookieDomains['dev'];
+        }
+    }
+
+    function getNestedValue(nestedObj, pathArr) {
+        if (!pathArr || !nestedObj) {
+            return false;
+        }
+        const objectExists = pathArr.split('.').reduce((obj, key) => (obj && obj.hasOwnProperty(key)) ? obj[key] : undefined, nestedObj);
+        if (objectExists && typeof (objectExists) === 'string') {
+            return objectExists.trim();
+        }
+        return objectExists;
+    };
+
+    // =============================
+    // ======= CMP FUNCTIONS =======
+    // =============================
+
+    function isConsentNeeded () {
+        return _window.Didomi && _window.Didomi.notice.isVisible();
+    }
+
+    function isCmpLoaded () {
+        return waitUntil(() => !!_window.Didomi && isDidomiReady, { maxAttempt: 20, interval: 500 });
+    }
+
+    async function getCmpConsent (type, id) {
+        // If didomi is not getting load or loaded we skip the cmp part
+        if (!hasDidomi) {
+            return false;
+        }
+        // noCmpLoaded avoid the reexecution of isCmpLoaded
+        if (noCmpToLoad || !(await isCmpLoaded())) {
+            noCmpToLoad = true;
+            return false;
+        };
+        return new Promise((resolve) => {
+            if (type === 'all') {
+                resolve(_window.Didomi.getUserConsentStatusForAll());
+            } else if (isConsentNeeded()) {
+                resolve(false);
+            } else if (type === 'purpose') {
+                resolve(_window.Didomi.getUserConsentStatusForPurpose(id));
+            } else if (type === 'vendor') {
+                resolve(_window.Didomi.getUserConsentStatusForVendor(id));
+            }
+        });
+    }
+
+
+    // ===================================
+    // ======= ANALYTICS FUNCTIONS =======
+    // ===================================
+
+    function initializeConsent () {
+        // TC-12240
+        window.pdl = window.pdl || {};
+        window.pdl.requireConsent = 'v2';
+        window.pdl.consent = {
+            defaultPreset: {
+                PA: 'essential'
+            }
+        };
+        window.pdl.consent.products = ['PA']; // Analytics only
+        window.pdl.consent_items = {
+            PA: {
+                properties: {
+                    ad_content: 'essential',
+                    article_type: 'essential',
+                    avec_video: 'essential',
+                    att: 'essential',
+                    competition: 'essential',
+                    darkmode: 'essential',
+                    date_contenu: 'essential',
+                    engagement: 'essential',
+                    id_contenu: 'essential',
+                    id_offre: 'essential',
+                    id_offre_souscription:'essential',
+                    live_commente: 'essential',
+                    live_statut: 'essential',
+                    payant: 'essential',
+                    provenance_abonnement: 'essential',
+                    provenance_compte: 'essential',
+                    saison: 'essential',
+                    sport: 'essential',
+                    tags_redaction: 'essential',
+                    type_page: 'essential',
+                    type_home:'essential',
+                    user_id: 'essential',
+                    visiteur_abonne: 'essential',
+                    visiteur_connecte: 'essential',
+                    onsitead_campaign: 'essential',
+                    onsitead_creation: 'essential',
+                    onsitead_format: 'essential',
+                    onsitead_type: 'essential',
+                    onsitead_variant: 'essential',
+                    onsitead_general_placement: 'essential',
+                    ab_testing: 'essential'
+                },
+                events: {
+                    'publisher.click': 'essential',
+                    'publisher.impression': 'essential'
+                }
+            }
+        };
+    }
+
+    function loadAnalyticsScript () {
+        initializeConsent();
+
+        // Load the script
+        return new Promise((resolve, reject) => {
+            initUserService().then(() => {
+                try {
+                    loadScript('/thirdparty/pianoAnalytics.js?20250120')
+                        .then(async () => {
+                            await initPianoAnalytics();
+                            resolve();
+                        });
+                } catch (e) {
+                    reject();
+                }
+
+            })
+        });
+    }
+
+    async function initPianoAnalytics () {
+        if (!pa?.getConfiguration()) {
+            let site = isDesktop || isTablet ? pianoIds.upwa.desktop : pianoIds.upwa.mobile;
+            if (_window.location.search.includes('context=pwapi') || navigator.userAgent.includes("MOBILE-LEQUIPE")) {
+                site = isTablet ? pianoIds.pwapi.tablet : pianoIds.pwapi.mobile;
+            }
+            _window.pa = pa;
+            pa.setConfigurations({
+                site,
+                cookieDomain: getCookieDomain(),
+                collectDomain
+            });
+        }
+
+        if (!isConsentNeeded()) {
+            const consent = await getCmpConsent('vendor', vendorsDidomiAnalytics);
+            if (pa.consent.getMode() !== 'opt-in' && consent) {
+                pa.consent.setAllPurposes('opt-in');
+            } else if (pa.consent.getMode() === 'opt-in' && !consent) {
+                pa.consent.setAllPurposes('essential');
+            }
+        }
+        pa.setUser(userInfos?.id ? userInfos.id : null, null, false);
+    }
+
+
+    function initUserService () {
+        return new Promise(function (resolve) {
+            loadScript(`${window.lequipeAssets.user.files[0]}?${window.lequipeAssets.user.version}`)
+                .then(function () {
+                    window.lequipeUserService.get({
+                        scopes: ['default']
+                    })
+                        .then(function (user) {
+                            userInfos = user;
+                            resolve();
+                        });
+                });
+        });
+    }
+
+    function getPianoAnalyticsAdditionalData () {
+        return getCmpConsent('all').then((consent) => {
+            const userServiceId = userInfos?.subscriptions?.active_services?.[0]?.offerCode;
+
+            let darkmode = null;
+            let adblock = null;
+            if(_window.$nuxt?.$store?.state) {
+                const prefersColorMode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'darkmode' : 'lightmode';
+                const colorMode = _window.$nuxt?.$store?.state?.colorScheme?.value === 'dark' ? 'darkmode' : 'lightmode';
+                darkmode = `${prefersColorMode}_${colorMode}`;
+                adblock = _window.$nuxt?.$store?.state?.isAdsBlocked ? 'avec_bloqueur' : 'sans_bloqueur'
+            }
+
+            const adContentElements = ['cookies', 'select_basic_ads', 'create_ads_profile', 'measure_ad_performance', 'market_research', 'improve_products', 'select_personalized_ads'];
+
+            return {
+                visiteur_connecte: userInfos?.id ? '1' : '0',
+                visiteur_abonne: userInfos?.access?.subscription_level > 0 ? '1' : '0',
+                adblock,
+                darkmode,
+                id_offre: userServiceId ? typeof userServiceId === 'string' ? userServiceId : userServiceId + '' : null,
+                ad_content: isSubsetOfArray(consent?.purposes?.enabled, adContentElements) ? '1' : '0'
+            };
+        });
+    }
+
+    async function sendInternalSearchResultEvent (stat, type) {
+        if (!stat) {
+            return new Error('Piano stat object is required.');
+        }
+
+        loadAnalyticsScript().then(function () {
+            getPianoAnalyticsAdditionalData()
+                .then((additionalData) => {
+                    _window.pa.sendEvent(`internal_search_result.${type || 'display'}`, {
+                        ...stat,
+                        ...additionalData
+                    });
+                });
+        });
+    }
+
+    async function sendPageDisplayEvent (stat) {
+        if (!stat) {
+            return new Error('Piano stat object is required.');
+        }
+        let innerStat = {};
+
+        // Cas apps mobile
+        if (_window.pwapi) {
+            // Rétrocompatibilité mobile (pas de at_vars, on doit le reconstruire)
+            if (!stat.at_vars && !stat.piano_vars && stat.page) {
+                innerStat = {
+                    __type: "stat_arborescence",
+                    piano_vars: {
+                        ...stat,
+                        "__type": "piano_vars"
+                    }
+                }
+            } else {
+                innerStat = stat;
+            }
+            if (!innerStat.at_vars && innerStat.piano_vars) {
+                innerStat.page = innerStat.piano_vars.page
+                innerStat.chapitre = innerStat.piano_vars.page_chapter1 || ""
+                innerStat.sous_chapitre = innerStat.piano_vars.page_chapter2 || ""
+                innerStat.sous_sous_chapitre = innerStat.piano_vars.page_chapter3 || ""
+                innerStat.at_vars = {
+                    "__type": "at_vars",
+                    basic: {
+                        name: innerStat.piano_vars.page,
+                        chapter1: innerStat.piano_vars.page_chapter1 || "",
+                        chapter2: innerStat.piano_vars.page_chapter2 || "",
+                        chapter3: innerStat.piano_vars.page_chapter3 || ""
+                    },
+                    custom: {
+                        13: "",
+                        14: "",
+                        16: "",
+                        17: innerStat.piano_vars.competition || "",
+                        18: innerStat.piano_vars.sport || "",
+                        19: "",
+                        21: "",
+                        22: "",
+                        23: "",
+                        26: "",
+                        27: "",
+                        28: innerStat.piano_vars.type_page || "",
+                        29: "",
+                        30: ""
+                    }
+                }
+
+                innerStat.indicateurs_application = [];
+                [17, 18, 28].forEach(function (index) {
+                    if (innerStat.at_vars.custom[index]) {
+                        innerStat.indicateurs_application.push({
+                            __type: 'stat_indicateur',
+                            "custom_var_type": "app",
+                            "id": index,
+                            "valeur": innerStat.at_vars.custom[index]
+                        })
+                    }
+                })
+            }
+
+            ['page_chapter1', 'page_chapter2', 'page_chapter3', 'sport', 'competition'].forEach((value) => {
+                if (innerStat.piano_vars[value] === "") {
+                    delete innerStat.piano_vars[value];
+                }
+            })
+
+            return _window.pwapi.broadcast('setAnalytics', innerStat);
+        }
+
+        // Rétrocompatibilité web (pas de piano_vars)
+        const statNode = stat.piano_vars ? stat.piano_vars : stat;
+        innerStat = {
+            page: statNode.page || statNode.name || undefined,
+            page_chapter1: statNode.page_chapter1 || statNode.chapter1 || statNode.chapitre || undefined,
+            page_chapter2: statNode.page_chapter2 || statNode.chapter2 || statNode.sous_chapitre || undefined,
+            page_chapter3: statNode.page_chapter3 || statNode.chapter3 || statNode.sous_sous_chapitre || undefined,
+            sport: statNode.sport || statNode.at_vars?.custom?.['18'] || undefined,
+            competition: statNode.competition || statNode.at_vars?.custom?.['17'] || undefined,
+            type_page: statNode.type_page || statNode.at_vars?.custom?.['28'] || undefined,
+            type_home: statNode.type_home || undefined,
+            payant: statNode.payant || undefined,
+            id_contenu: statNode.id_contenu || undefined,
+            article_type: statNode.article_type || undefined,
+            avec_video: statNode.avec_video || undefined,
+            date_contenu: statNode.date_contenu || undefined,
+            live_commente: statNode.live_commente || undefined,
+            live_statut: statNode.live_statut || undefined,
+            tags_redaction: statNode.tags_redaction || undefined,
+            id_offre: statNode.id_offre || undefined,
+            id_offre_souscription: statNode.id_offre_souscription || undefined,
+            att: statNode.att || undefined,
+            saison: statNode.saison || undefined,
+            provenance_abonnement: statNode.provenance_abonnement || undefined,
+            provenance_compte: statNode.provenance_compte || undefined,
+            engagement: statNode.engagement || undefined,
+            ise_keyword: statNode.ise_keyword || undefined,
+            ise_page: statNode.ise_page || undefined,
+            ab_testing: statNode.ab_testing || undefined
+        }
+
+        loadAnalyticsScript().then(function () {
+            getPianoAnalyticsAdditionalData()
+                .then((additionalData) => {
+                    _window.pa.sendEvent('page.display', {
+                        ...innerStat,
+                        ...additionalData,
+                    });
+                });
+            });
+    }
+
+    function sendPublisherEvent (publisher) {
+        if (!publisher) {
+            return new Error('Piano publisher object is required.');
+        }
+
+        // Cas apps mobile
+        if (_window.pwapi) {
+            return _window.pwapi.broadcast('sendScrollAT', publisher);
+        }
+
+        // Rétrocompatibilité
+        let innerPublisher = {};
+        ['click', 'impression'].forEach(event => {
+            if (publisher[event]) {
+                innerPublisher[event] = {};
+                innerPublisher[event].onsitead_type = publisher[event].onsitead_type || publisher[event].type || 'Publisher';
+                innerPublisher[event].onsitead_advertiser = publisher[event].onsitead_advertiser || publisher[event].advertiser || undefined;
+                innerPublisher[event].onsitead_campaign = publisher[event].onsitead_campaign || publisher[event].campaign || publisher[event].campaign_id || undefined;
+                innerPublisher[event].onsitead_category = publisher[event].onsitead_category || publisher[event].category || undefined;
+                innerPublisher[event].onsitead_creation = publisher[event].onsitead_creation || publisher[event].creation || undefined;
+                innerPublisher[event].onsitead_detailed_placement = publisher[event].onsitead_detailed_placement || publisher[event].detailedPlacement || undefined;
+                innerPublisher[event].onsitead_format = publisher[event].onsitead_format || publisher[event].format || undefined;
+                innerPublisher[event].onsitead_general_placement = publisher[event].onsitead_general_placement || publisher[event].general_placement || undefined;
+                innerPublisher[event].onsitead_url = publisher[event].onsitead_url || publisher[event].url || undefined;
+                innerPublisher[event].onsitead_variant = publisher[event].onsitead_variant || publisher[event].variant || undefined;
+            }
+        })
+
+        loadAnalyticsScript().then(() => {
+            getPianoAnalyticsAdditionalData()
+                .then((additionalData) => {
+                    if (innerPublisher.impression) {
+                        _window.pa.sendEvent('publisher.impression', {
+                            ...innerPublisher.impression,
+                            ...additionalData
+                        });
+                    } else if (innerPublisher.click) {
+                        _window.pa.sendEvent('publisher.click', {
+                            ...innerPublisher.click,
+                            ...additionalData
+                        });
+                    }
+            });
+        });
+    }
+
+    function sendClickEvent (statObj) {
+        if (!statObj) {
+            return new Error('Piano stat object is required.');
+        }
+
+        if (_window.pwapi) {
+            return _window.pwapi.broadcast('setAnalyticsClick', {
+                name: statObj.click,
+                page: statObj.click,
+                chapitre: statObj.click_chapter1,
+                sous_chapitre: statObj.click_chapter2,
+                sous_sous_chapitre: statObj.click_chapter3
+            });
+        }
+
+        // Rétrocompatibilité
+        const innerStat = {
+            click: statObj.click || statObj.name || statObj.page || undefined,
+            click_chapter1: statObj.click_chapter1 || statObj.chapter1 || statObj.chapitre || undefined,
+            click_chapter2: statObj.click_chapter2 || statObj.chapter2 || statObj.sous_chapitre || undefined,
+            click_chapter3: statObj.click_chapter3 || statObj.chapter3 || statObj.sous_sous_chapitre || undefined,
+            ab_testing: statObj.ab_testing || undefined,
+            id_contenu: statObj.id_contenu || undefined
+        }
+
+        loadAnalyticsScript().then(() => {
+            getPianoAnalyticsAdditionalData()
+                .then((additionalData) => {
+                    if (innerStat.click && statObj.type) {
+                        _window.pa.sendEvent(`click.${statObj.type}`, {
+                            ...innerStat,
+                            ...additionalData
+                        });
+                    } else {
+                        return new Error(`Piano stat object must contain type and click name. Type: ${statObj.type}, name: ${statObj.click}`);
+                    }
+                });
+        });
+    }
+
+    window.lequipeAnalytics  = {
+        sendPageDisplayEvent,
+        sendPublisherEvent,
+        sendClickEvent,
+        sendInternalSearchResultEvent
+    };
+})();

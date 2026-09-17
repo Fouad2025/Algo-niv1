@@ -1,0 +1,6 @@
+var grvt_customProperties = {};
+var grvt_siteToken = 'leq-web17';
+var grvt_processingToken = 'ohio-aspen';
+var gravity = document.createElement('script');
+gravity.setAttribute('src', 'https://tag.agrvt.com/tag/v2/wrapper.js');
+document.head.appendChild(gravity);
